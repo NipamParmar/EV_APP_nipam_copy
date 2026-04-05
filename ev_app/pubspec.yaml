@@ -1,0 +1,42 @@
+name: ev_app
+description: "A new Flutter project."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Icons & Fonts
+  cupertino_icons: ^1.0.8
+  google_fonts: ^8.0.2  # Real UPI icons ke liye zaroori hai
+  flutter_animate: ^4.5.2
+
+  # Firebase & Auth
+  firebase_core: ^4.6.0
+  firebase_auth: ^6.3.0
+  cloud_firestore: ^6.2.0
+  google_sign_in: ^6.2.1
+
+  # Maps & Location
+  geolocator: ^10.1.0
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
+
+  # Payments & Scanner
+  flutter_upi_india: ^1.0.1
+  mobile_scanner: ^7.2.0
+
+  # Utils
+  intl: ^0.20.2
+  intl_phone_field: ^3.2.0
+
+flutter:
+  uses-material-design: true  # Material icons load karne ke liye
+  
+  # Assets section (Spacing ka dhyan rakhna bhai)
+  assets:
+    - assets/register.png  # Login/Signup image ke liye
