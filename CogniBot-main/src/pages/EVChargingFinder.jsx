@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import { collection, onSnapshot, doc, serverTimestamp, runTransaction } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -97,10 +97,18 @@ function MapController({ setUserPosition, setMapInstance }) {
   const map = useMap();
   useEffect(() => {
     setMapInstance(map);
-    map.locate().on("locationfound", function (e) {
+    let initialLocationFly = false;
+    map.locate({ watch: true, enableHighAccuracy: true }).on("locationfound", function (e) {
       setUserPosition(e.latlng);
-      map.flyTo(e.latlng, 13);
+      if (!initialLocationFly) {
+        initialLocationFly = true;
+        map.flyTo(e.latlng, 13);
+      }
     });
+
+    return () => {
+      map.stopLocate();
+    };
   }, [map, setMapInstance, setUserPosition]);
   return null;
 }
@@ -112,6 +120,8 @@ const EVChargingFinder = () => {
   const [selectedStation, setSelectedStation] = useState(null);
   const [userPosition, setUserPosition] = useState(null);
   const [mapInstance, setMapInstance] = useState(null);
+  const [routePath, setRoutePath] = useState(null);
+  const [lastRouteFetchPosition, setLastRouteFetchPosition] = useState(null);
   const { currentUser } = useAuth();
 
   useEffect(() => {
@@ -182,11 +192,56 @@ const EVChargingFinder = () => {
     }
   };
 
-  const handleCardClick = (s) => {
-    setSelectedStation(s);
-    if (mapInstance && s.lat && s.lng) {
-      mapInstance.flyTo([s.lat, s.lng], 16, { animate: true, duration: 1.5 });
+  const fetchRoute = async (start, end) => {
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      if (data.routes && data.routes[0]) {
+        const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+        setRoutePath(coords);
+        setLastRouteFetchPosition(start);
+        return coords;
+      }
+    } catch (err) {
+      console.error("Routing error:", err);
     }
+    return null;
+  };
+
+  // Live GPS Tracking & Route Recalculation
+  useEffect(() => {
+    if (!selectedStation || !userPosition || !lastRouteFetchPosition) return;
+    
+    const distMovedKm = calculateDistance(
+      userPosition.lat, userPosition.lng, 
+      lastRouteFetchPosition.lat, lastRouteFetchPosition.lng
+    );
+    
+    // Only recalculate if user moved more than ~20 meters (0.02 km)
+    if (distMovedKm && parseFloat(distMovedKm) > 0.02) {
+      fetchRoute(userPosition, { lat: selectedStation.lat, lng: selectedStation.lng });
+    }
+  }, [userPosition, selectedStation, lastRouteFetchPosition]);
+
+  const handleCardClick = async (s) => {
+    setSelectedStation(s);
+    if (!mapInstance || !s.lat || !s.lng) return;
+
+    if (userPosition) {
+      const coords = await fetchRoute(userPosition, { lat: s.lat, lng: s.lng });
+      if (coords) {
+        const bounds = L.latLngBounds([userPosition, [s.lat, s.lng]]);
+        mapInstance.fitBounds(bounds, { padding: [80, 80], animate: true, duration: 1.5 });
+        return;
+      }
+    }
+    
+    // Fallback if no user position or route fails
+    setRoutePath(null);
+    setLastRouteFetchPosition(null);
+    mapInstance.flyTo([s.lat, s.lng], 16, { animate: true, duration: 1.5 });
   };
 
   // Process and sort distances
@@ -342,6 +397,19 @@ const EVChargingFinder = () => {
                 </div>
               </Popup>
             </Marker>
+          )}
+
+          {routePath && (
+            <Polyline 
+              positions={routePath} 
+              pathOptions={{ 
+                color: '#3b82f6', 
+                weight: 6, 
+                opacity: 0.7, 
+                dashArray: '12, 16',
+                className: 'animate-pulse-slow bypass-neo'
+              }} 
+            />
           )}
 
           {stations.map(s => (
