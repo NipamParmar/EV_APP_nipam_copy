@@ -1,10 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { GoogleMap, MarkerF, InfoWindowF, useJsApiLoader, CircleF } from '@react-google-maps/api';
-import { collection, getDocs, addDoc, serverTimestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
+import { collection, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, getDoc, runTransaction } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { MapPin, Zap, BatteryCharging, Clock, Loader2 } from 'lucide-react';
+import { Zap, BatteryCharging, Loader2, IndianRupee, MapPin, Gauge, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Icon Setup
+const createIcon = (color) => new L.DivIcon({
+  html: `<svg width="30" height="30" viewBox="0 0 24 24" fill="${color}" stroke="white" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>`,
+  className: "", iconSize: [30, 30], iconAnchor: [15, 30], popupAnchor: [0, -30]
+});
+
+const stationIcon = createIcon('#16a34a'); // Green for stations
+const userIcon = createIcon('#3b82f6');    // Blue for YOU
+
+// FIXED: Component now actually displays the blue pin
+function MyLocationMarker() {
+  const [position, setPosition] = useState(null);
+  const map = useMap();
+
+  useEffect(() => {
+    // 1. Find user location
+    map.locate().on("locationfound", function (e) {
+      setPosition(e.latlng); // Set state to show the marker
+      map.flyTo(e.latlng, map.getZoom()); // Center map on user
+    });
+  }, [map]);
+
+  // 2. Render the Blue Pin if position is found
+  return position === null ? null : (
+    <Marker position={position} icon={userIcon}>
+      <Popup>
+        <div className="font-bold text-blue-600">You are here</div>
+      </Popup>
+    </Marker>
+  );
+}
 
 const EVChargingFinder = () => {
   const [stations, setStations] = useState([]);
@@ -12,270 +46,126 @@ const EVChargingFinder = () => {
   const [bookingLoading, setBookingLoading] = useState(false);
   const { currentUser } = useAuth();
 
-  const [mapCenter, setMapCenter] = useState(null);
-  const [selectedStation, setSelectedStation] = useState(null);
-
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY
-  });
-
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setMapCenter([position.coords.latitude, position.coords.longitude]);
-        },
-        (error) => {
-          console.error("Geolocation error:", error);
-          setMapCenter([28.6139, 77.2090]); 
-        }
-      );
-    } else {
-      setMapCenter([28.6139, 77.2090]);
-    }
+    const unsub = onSnapshot(collection(db, 'stations'), (snap) => {
+      setStations(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    });
+    return () => unsub();
   }, []);
 
-  useEffect(() => {
-    if (!mapCenter) return;
-
-    const fetchLiveStations = async () => {
-      try {
-        const url = `https://api.openchargemap.io/v3/poi/?output=json&latitude=${mapCenter[0]}&longitude=${mapCenter[1]}&distance=5000&maxresults=200`;
-        
-        const res = await fetch(url, {
-          headers: {
-            'X-API-Key': import.meta.env.VITE_OCM_API_KEY || ''
-          }
-        });
-
-        if (res.status === 403 || res.status === 401) {
-          toast.error("OCM API Access Denied. Check your VITE_OCM_API_KEY inside the .env file!");
-          throw new Error("Missing/Invalid OpenChargeMap Key");
-        }
-
-        const data = await res.json();
-
-        // Cross-reference Firebase active bookings
-        let occupiedSlots = {};
-        try {
-           const bookingsSnap = await getDocs(collection(db, 'bookings'));
-           bookingsSnap.docs.forEach(d => {
-              const b = d.data();
-              if (b.bookingStatus === 'active' && b.stationId) {
-                 occupiedSlots[b.stationId] = (occupiedSlots[b.stationId] || 0) + 1;
-              }
-           });
-        } catch(e) {
-           console.error("Booking sync error", e);
-        }
-        
-        const dataList = data.map(poi => {
-           let type = 'Standard Charger';
-           let price = 0;
-           
-           if (poi.Connections && poi.Connections.length > 0) {
-              const maxPower = Math.max(...poi.Connections.map(c => c.PowerKW || 0));
-              if (maxPower >= 40) type = 'DC Fast Charge';
-              else if (maxPower >= 11) type = 'Type 2 AC';
-           }
-
-           if (poi.UsageCost && !poi.UsageCost.toLowerCase().includes('free')) {
-              price = 120; // Default simulated paid price in INR 
-           }
-
-           return {
-             id: poi.ID.toString(),
-             lat: poi.AddressInfo?.Latitude,
-             lng: poi.AddressInfo?.Longitude,
-             name: poi.AddressInfo?.Title || poi.OperatorInfo?.Title || 'Global EV Station',
-             pricePerHour: price,
-             chargerType: type,
-             availableSlots: Math.max(0, (poi.NumberOfPoints || Math.floor(Math.random() * 4) + 1) - (occupiedSlots[poi.ID.toString()] || 0))
-           };
-        });
-        
-        setStations(dataList);
-      } catch (err) {
-        console.error("Failed to fetch live stations:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchLiveStations();
-  }, [mapCenter]);
-
   const handleBookSlot = async (station) => {
-    if (!currentUser) {
-      toast.error('Please log in to book a slot');
-      return;
-    }
-    
-    if (currentUser.profile?.role === 'admin') {
-      toast.error('Administrators are not permitted to book stations.');
-      return;
-    }
-    
+    if (!currentUser) return toast.error("Please login to book");
+    if (bookingLoading) return;
+
     setBookingLoading(true);
     try {
-      // 1. Fetch latest user balance
-      const userRef = doc(db, 'users', currentUser.uid);
-      const userSnap = await getDoc(userRef);
-      if (!userSnap.exists()) throw new Error("User record not found");
-      
-      const userData = userSnap.data();
-      const cost = station.pricePerHour || 100;
+      // Use Transaction for atomic money deduction and slot update
+      await runTransaction(db, async (transaction) => {
+        const userRef = doc(db, 'users', currentUser.uid);
+        const stationRef = doc(db, 'stations', station.id);
 
-      if ((userData.walletBalance || 0) < cost) {
-        toast.error(`Insufficient balance. Minimum ₹${cost} required. Please open the EV App to top up.`);
-        setBookingLoading(false);
-        return;
-      }
+        const userSnap = await transaction.get(userRef);
+        const stationSnap = await transaction.get(stationRef);
 
-      // 2. Deduct balance
-      await updateDoc(userRef, {
-        walletBalance: (userData.walletBalance || 0) - cost
+        if (!userSnap.exists()) throw "User profile not found!";
+        
+        const userData = userSnap.data();
+        const stationData = stationSnap.data();
+
+        const currentBalance = Number(userData.walletBalance || 0); // Root balance
+        const cost = Number(stationData.pricePerHour || 0);
+        const availableSlots = Number(stationData.availableSlots || 0);
+
+        if (currentBalance < cost) throw `Insufficient Balance (Have ₹${currentBalance})`;
+        if (availableSlots <= 0) throw "No slots available!";
+
+        // Update Wallet & Slots
+        transaction.update(userRef, { walletBalance: currentBalance - cost });
+        transaction.update(stationRef, { availableSlots: availableSlots - 1 });
+
+        // Create Booking
+        const bookingRef = doc(collection(db, 'bookings'));
+        transaction.set(bookingRef, {
+          userId: currentUser.uid,
+          userName: userData.name || currentUser.displayName || "User",
+          stationId: station.id,
+          stationName: stationData.name,
+          amount: cost,
+          status: 'active',
+          createdAt: serverTimestamp()
+        });
       });
 
-      // 3. Create Booking
-      await addDoc(collection(db, 'bookings'), {
-        userId: currentUser.uid,
-        stationId: station.id,
-        amount: cost,
-        paymentStatus: 'completed',
-        bookingStatus: 'active',
-        slotTime: serverTimestamp(),
-        createdAt: serverTimestamp(),
-        energykWh: 5.5
-      });
-
-      // Synchronously decrease the slot count locally 
-      setStations(prev => prev.map(s => {
-         if (s.id === station.id) {
-            return { ...s, availableSlots: Math.max(0, (s.availableSlots || 0) - 1) };
-         }
-         return s;
-      }));
-
-      toast.success(`Slot booked at ${station.name}!`);
-      setSelectedStation(null); // Close the infowindow
+      toast.success("Booking Successful!");
     } catch (err) {
       console.error(err);
-      toast.error('Booking failed. Please try again.');
+      toast.error(typeof err === 'string' ? err : "Transaction failed");
     } finally {
       setBookingLoading(false);
     }
   };
 
-  if (!isLoaded || loading || !mapCenter) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
-        <Loader2 size={48} className="mb-4 text-green-500 animate-spin" />
-        <p className="font-bold text-slate-500">Acquiring live location satellites...</p>
-      </div>
-    );
-  }
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin text-green-600" size={40} /></div>;
 
   return (
-    <div className="flex flex-col h-[calc(100vh)] pt-20">
-      <div className="flex flex-1 overflow-hidden">
-        {/* Side Panel for Stations List */}
-        <div className="z-10 flex flex-col bg-white border-r shadow-xl w-80 md:w-96 border-slate-200">
-          <div className="p-6 bg-white border-b border-slate-100">
-            <h2 className="flex items-center gap-2 text-2xl font-black text-slate-900">
-              <MapPin size={24} className="text-green-500" /> Nearest Stations
-            </h2>
-            <p className="mt-1 text-sm font-medium text-slate-500">{stations.length} active stations found</p>
-          </div>
-          <div className="flex-1 p-4 space-y-4 overflow-y-auto bg-slate-50">
-            {stations.length === 0 ? (
-              <div className="p-4 font-medium text-center text-slate-500">No stations found in the database.</div>
-            ) : stations.map(station => (
-               <div 
-                 key={station.id} 
-                 onClick={() => setSelectedStation(station)}
-                 className="p-4 transition-all bg-white border shadow-sm cursor-pointer rounded-xl border-slate-200 hover:border-green-300 hover:shadow-md"
-               >
-                  <h3 className="mb-1 font-bold text-slate-900">{station.name || 'EV Station'}</h3>
-                  <div className="flex flex-col gap-2 pt-2 mt-2 border-t border-slate-100">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-1 text-slate-500"><BatteryCharging size={14}/> {station.chargerType || 'Standard'}</span>
-                      <span className="font-bold text-slate-800">₹{station.pricePerHour || 0}/hr</span>
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-xs font-bold text-slate-400">Available Slots</span>
-                      <span className="px-2 py-1 text-xs font-bold text-green-700 bg-green-100 rounded">{station.availableSlots || 0}</span>
-                    </div>
-                  </div>
-               </div>
-            ))}
-          </div>
+    <div className="flex w-full mt-24 h-[calc(100vh-96px)] overflow-hidden bg-white relative">
+      <aside className="w-80 md:w-96 flex flex-col border border-slate-200 z-[400] bg-white shrink-0 mt-4 ml-4 mb-4 rounded-3xl shadow-2xl overflow-hidden">
+        <div className="p-6 border-b bg-white">
+          <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+            <Zap className="text-green-600" fill="#16a34a" size={24} /> Ahmedabad Hubs
+          </h2>
         </div>
 
-        {/* Map Viewport */}
-        <div className="relative flex-1">
-          <GoogleMap
-            mapContainerClassName="w-full h-full z-0 font-sans"
-            center={{ lat: mapCenter[0], lng: mapCenter[1] }}
-            zoom={13}
-            options={{
-              disableDefaultUI: true,
-              zoomControl: true,
-            }}
-          >
-            {/* User Live Location Marker */}
-            <CircleF 
-              center={{ lat: mapCenter[0], lng: mapCenter[1] }} 
-              options={{ fillColor: '#3b82f6', fillOpacity: 0.5, strokeColor: '#2563eb', strokeWeight: 2 }} 
-              radius={400} 
-            />
-        
-            {stations.map(station => {
-              if (!station.lat || !station.lng) return null;
-              return (
-                <MarkerF 
-                  key={station.id} 
-                  position={{ lat: station.lat, lng: station.lng }}
-                  onClick={() => setSelectedStation(station)}
-                />
-              );
-            })}
-
-            {selectedStation && (
-              <InfoWindowF
-                position={{ lat: selectedStation.lat, lng: selectedStation.lng }}
-                onCloseClick={() => setSelectedStation(null)}
-              >
-                <div className="p-4 w-60">
-                  <div className="flex items-center justify-center w-12 h-12 mb-3 text-green-600 bg-green-100 rounded-xl">
-                    <Zap size={24} />
-                  </div>
-                  <h3 className="mb-1 text-lg font-bold text-slate-900">{selectedStation.name || 'Unnamed Station'}</h3>
-                  <div className="flex items-center gap-1.5 text-sm font-medium text-slate-500 mb-2 border-b border-slate-100 pb-2">
-                     <BatteryCharging size={16} className="text-green-500" /> {selectedStation.chargerType || 'Standard'}
-                  </div>
-                  
-                  <div className="flex items-center justify-between mb-4 text-sm">
-                    <span className="font-bold text-slate-900">₹{selectedStation.pricePerHour || 0}/hr</span>
-                    <span className="px-2 py-1 text-xs font-bold text-green-700 bg-green-100 rounded">
-                      {selectedStation.availableSlots || 0} Slots
-                    </span>
-                  </div>
-
-                  <button 
-                    onClick={() => handleBookSlot(selectedStation)}
-                    disabled={bookingLoading || (selectedStation.availableSlots || 0) === 0}
-                    className="flex items-center justify-center w-full gap-2 py-2 font-bold text-white transition-colors rounded-lg bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300"
-                  >
-                    {bookingLoading ? <Loader2 size={16} className="animate-spin" /> : 
-                     (selectedStation.availableSlots || 0) === 0 ? 'Full' : 'Book Slot'}
-                  </button>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
+          {stations.map(s => (
+            <div key={s.id} className="p-5 bg-white border-2 border-slate-100 rounded-2xl shadow-sm hover:border-green-500 transition-all group">
+              <h3 className="font-extrabold text-slate-900 group-hover:text-green-600">{s.name}</h3>
+              <div className="grid grid-cols-2 gap-2 my-4">
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                  <p className="text-[8px] font-black text-slate-400 uppercase">Hardware</p>
+                  <p className="text-xs font-bold text-slate-700 truncate">{s.chargerType}</p>
                 </div>
-              </InfoWindowF>
-            )}
-          </GoogleMap>
+                <div className="bg-slate-50 p-2 rounded-xl border border-slate-100">
+                  <p className="text-[8px] font-black text-slate-400 uppercase">Slots</p>
+                  <p className="text-xs font-bold text-green-600">{s.availableSlots} Left</p>
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-3 border-t border-dashed border-slate-200">
+                <span className="text-lg font-black text-slate-900"><IndianRupee size={16} />{s.pricePerHour}</span>
+                <button 
+                  onClick={() => handleBookSlot(s)} 
+                  disabled={bookingLoading || s.availableSlots <= 0} 
+                  className="px-6 py-2 bg-slate-900 text-white rounded-xl font-bold text-xs hover:bg-green-600 transition-all"
+                >
+                  {bookingLoading ? <Loader2 className="animate-spin" size={16} /> : 'Book'}
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
+      </aside>
+
+      <main className="flex-1 relative z-0">
+        <MapContainer center={[23.0225, 72.5714]} zoom={13} style={{ height: '100%', width: '100%' }}>
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+          
+          {/* USER LOCATION PIN */}
+          <MyLocationMarker />
+
+          {/* STATION PINS */}
+          {stations.map(s => (
+            <Marker key={s.id} position={[s.lat, s.lng]} icon={stationIcon}>
+              <Popup>
+                <div className="p-2 min-w-[120px]">
+                  <p className="font-bold text-slate-900 mb-1">{s.name}</p>
+                  <button onClick={() => handleBookSlot(s)} className="w-full bg-slate-900 text-white py-1 rounded font-bold text-[10px]">Confirm Booking</button>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+      </main>
     </div>
   );
 };

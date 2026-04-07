@@ -8,6 +8,7 @@ import AppPreview from './components/AppPreview';
 import DashboardSection from './components/DashboardSection';
 import DownloadSection from './components/DownloadSection';
 import Footer from './components/Footer';
+import AdminEVChargingFinder from './pages/admin/Admin_EVChargingFinder';
 import EVChargingFinder from './pages/EVChargingFinder';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -52,11 +53,17 @@ function App() {
           <div className="flex-1">
             <Routes>
               <Route path="/" element={<LandingPage />} />
+              <Route path="/deploy-charger" element={
+                <ProtectedRoute>
+                  <AdminEVChargingFinder />
+                </ProtectedRoute>
+              } />
               <Route path="/find-charger" element={
                 <ProtectedRoute>
                   <EVChargingFinder />
                 </ProtectedRoute>
               } />
+
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/dashboard" element={
