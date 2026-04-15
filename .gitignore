@@ -1,0 +1,24 @@
+.DS_Store
+Thumbs.db
+
+# Env files (keep examples)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Common build outputs / caches
+dist/
+build/
+coverage/
+.cache/
+
+# Local binaries / scratch files in repo root
+/node
+/node.cpp

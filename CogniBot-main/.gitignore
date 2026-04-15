@@ -5,8 +5,65 @@ serviceAccountKey.json
 # If you have client-side secrets or env files
 .env
 .env.local
+**/.env
+**/.env.*
+!.env.example
+!.env.*.example
 **/node_modules/
 
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs / caches
+dist/
+build/
+.next/
+.nuxt/
+.output/
+coverage/
+.cache/
+.turbo/
+.vite/
+
+# Runtime data
+*.pid
+*.seed
+*.pid.lock
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Keys / certs (keep examples only)
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.crt
+**/*.cer
+**/*.der
+**/*.jks
+**/*.keystore
+**/id_rsa
+**/id_ed25519
+**/id_*.pub
+
+# Common credential filenames
+**/credentials.json
+**/*credentials*.json
+**/*secret*.json
+**/*token*.json
