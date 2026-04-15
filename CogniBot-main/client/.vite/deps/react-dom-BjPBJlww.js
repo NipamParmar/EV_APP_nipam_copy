@@ -1,4 +1,5 @@
-import { n as __commonJSMin, t as require_react } from "./react-Na5-BvaJ.js";
+import { t as __commonJSMin } from "./chunk-BoAXSpZd.js";
+import { t as require_react } from "./react.js";
 //#region node_modules/react-dom/cjs/react-dom.development.js
 /**
 * @license React
@@ -179,6 +180,6 @@ var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_dom_development();
 }));
 //#endregion
-export default require_react_dom();
+export { require_react_dom as t };
 
-//# sourceMappingURL=react-dom.js.map
+//# sourceMappingURL=react-dom-BjPBJlww.js.map

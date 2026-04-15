@@ -1,0 +1,12 @@
+# Firebase/Google Cloud Secrets
+serviceAccountKey.json
+**/serviceAccountKey.json
+
+# If you have client-side secrets or env files
+.env
+.env.local
+**/node_modules/
+
+# OS generated files
+.DS_Store
+Thumbs.db

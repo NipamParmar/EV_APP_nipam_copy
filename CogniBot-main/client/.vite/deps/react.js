@@ -1,6 +1,4 @@
-//#region \0rolldown/runtime.js
-var __commonJSMin = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
-//#endregion
+import { t as __commonJSMin } from "./chunk-BoAXSpZd.js";
 //#region node_modules/react/cjs/react.development.js
 /**
 * @license React
@@ -765,6 +763,7 @@ var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_development();
 }));
 //#endregion
-export { __commonJSMin as n, require_react as t };
+export default require_react();
+export { require_react as t };
 
-//# sourceMappingURL=react-Na5-BvaJ.js.map
+//# sourceMappingURL=react.js.map
