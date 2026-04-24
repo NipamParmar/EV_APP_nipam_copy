@@ -5,7 +5,7 @@ const http = require("http");
 
 const handleRequest = require("./handlers/requestHandler");
 
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 8080;
 
 // Express app
 const app = express();
