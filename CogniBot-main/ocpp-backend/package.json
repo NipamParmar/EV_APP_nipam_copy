@@ -4,7 +4,7 @@
     "description": "OCPP 1.6 JSON Central System Backend",
     "main": "server.js",
     "scripts": {
-        "start": "node server.js",
+        "start": "node server.js"
     },
     "author": "Nirmal Joshi",
     "license": "ISC",
