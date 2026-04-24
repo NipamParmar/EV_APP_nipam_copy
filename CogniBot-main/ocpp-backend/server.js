@@ -12,7 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Create single HTTP server
+// Create HTTP server
 const server = http.createServer(app);
 
 // Attach WebSocket to same server
@@ -20,7 +20,7 @@ const wss = new WebSocket.Server({ server });
 
 const chargers = {};
 
-console.log(`Server starting on port ${PORT}`);
+console.log(`🚀 Server starting on port ${PORT}`);
 
 /*
 ========================
@@ -30,18 +30,20 @@ CHARGER CONNECTION
 
 wss.on("connection", (ws, request) => {
 
+  console.log("🔥 New WS Connection:", request.url);
+
   const urlParts = request.url.split("/");
-  const chargePointId = urlParts[1];
+  const chargePointId = urlParts[1] || "unknown";
 
   chargers[chargePointId] = ws;
 
-  console.log(`ChargePoint Connected: ${chargePointId}`);
+  console.log(`⚡ ChargePoint Connected: ${chargePointId}`);
 
   ws.on("message", async (message) => {
     try {
       const msg = JSON.parse(message.toString());
 
-      console.log("Incoming:", msg);
+      console.log("📩 Incoming:", msg);
 
       const messageTypeId = msg[0];
       const uniqueId = msg[1];
@@ -59,13 +61,13 @@ wss.on("connection", (ws, request) => {
       }
 
     } catch (err) {
-      console.error("Invalid message format:", err);
+      console.error("❌ Invalid message:", err);
     }
   });
 
   ws.on("close", () => {
     delete chargers[chargePointId];
-    console.log(`ChargePoint Disconnected: ${chargePointId}`);
+    console.log(`❌ ChargePoint Disconnected: ${chargePointId}`);
   });
 
 });
@@ -81,7 +83,7 @@ function remoteStartTransaction(stationId, connectorId, idTag) {
   const charger = chargers[stationId];
 
   if (!charger) {
-    console.log("Charger not connected:", stationId);
+    console.log("⚠️ Charger not connected:", stationId);
     return { status: "Rejected" };
   }
 
@@ -94,14 +96,14 @@ function remoteStartTransaction(stationId, connectorId, idTag) {
 
   charger.send(JSON.stringify(message));
 
-  console.log("RemoteStartTransaction sent →", stationId);
+  console.log("🚀 RemoteStart sent →", stationId);
 
   return { status: "Accepted" };
 }
 
 /*
 ========================
-HTTP API FOR FRONTEND
+HTTP API
 ========================
 */
 
@@ -124,7 +126,12 @@ app.get("/", (req, res) => {
   res.send("Backend running 🚀");
 });
 
-// Start server (IMPORTANT)
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+/*
+========================
+START SERVER (IMPORTANT)
+========================
+*/
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${PORT}`);
 });
